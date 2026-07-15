@@ -211,3 +211,44 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
   });
 });
+
+describe("Pi settings", () => {
+  it("defaults to an enabled Pi ACP installation", () => {
+    expect(DEFAULT_SERVER_SETTINGS.providers.pi).toEqual({
+      enabled: true,
+      binaryPath: "pi-acp",
+      piBinaryPath: "pi",
+    });
+  });
+
+  it("normalizes Pi binary paths in settings and patches", () => {
+    const settings = decodeServerSettings({
+      providers: {
+        pi: {
+          binaryPath: "  /opt/bin/pi-acp  ",
+          piBinaryPath: "  /opt/bin/pi  ",
+        },
+      },
+    });
+    const patch = decodeServerSettingsPatch({
+      providers: {
+        pi: {
+          enabled: false,
+          binaryPath: "  custom-pi-acp  ",
+          piBinaryPath: "  custom-pi  ",
+        },
+      },
+    });
+
+    expect(settings.providers.pi).toMatchObject({
+      enabled: true,
+      binaryPath: "/opt/bin/pi-acp",
+      piBinaryPath: "/opt/bin/pi",
+    });
+    expect(patch.providers?.pi).toEqual({
+      enabled: false,
+      binaryPath: "custom-pi-acp",
+      piBinaryPath: "custom-pi",
+    });
+  });
+});

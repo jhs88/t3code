@@ -42,7 +42,10 @@ import {
   ProviderValidationError,
   type ProviderAdapterError,
 } from "../Errors.ts";
-import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
+import type {
+  ProviderAdapterCapabilities,
+  ProviderAdapterShape,
+} from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
 import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
@@ -84,7 +87,10 @@ type LegacyProviderRuntimeEvent = {
   readonly [key: string]: unknown;
 };
 
-function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
+function makeFakeCodexAdapter(
+  provider: ProviderDriverKind = CODEX_DRIVER,
+  capabilities: ProviderAdapterCapabilities = { sessionModelSwitch: "in-session" },
+) {
   const sessions = new Map<ThreadId, ProviderSession>();
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
 
@@ -201,9 +207,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
 
   const adapter: ProviderAdapterShape<ProviderAdapterError> = {
     provider,
-    capabilities: {
-      sessionModelSwitch: "in-session",
-    },
+    capabilities,
     startSession,
     sendTurn,
     interruptTurn,
@@ -270,7 +274,12 @@ const hasMetricSnapshot = (
 function makeProviderServiceLayer() {
   const codex = makeFakeCodexAdapter();
   const claude = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
-  const cursor = makeFakeCodexAdapter(CURSOR_DRIVER);
+  const cursor = makeFakeCodexAdapter(CURSOR_DRIVER, {
+    sessionModelSwitch: "in-session",
+    allowedRuntimeModes: ["full-access"],
+    runtimeModeReason: "Cursor test adapter requires full access.",
+    supportsConversationRollback: false,
+  });
   const registry = makeAdapterRegistryMock({
     [ProviderDriverKind.make("codex")]: codex.adapter,
     [ProviderDriverKind.make("claudeAgent")]: claude.adapter,
@@ -841,6 +850,64 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("rejects unsupported runtime modes, including provider switches", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const rejected = yield* Effect.flip(
+        provider.startSession(asThreadId("thread-cursor-only"), {
+          provider: CURSOR_DRIVER,
+          providerInstanceId: ProviderInstanceId.make("cursor"),
+          threadId: asThreadId("thread-cursor-only"),
+          runtimeMode: "approval-required",
+        }),
+      );
+      assert.instanceOf(rejected, ProviderValidationError);
+      assert.include(rejected.issue, "requires full access");
+
+      const threadId = asThreadId("thread-provider-switch");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "approval-required",
+      });
+      const switched = yield* Effect.flip(
+        provider.startSession(threadId, {
+          provider: CURSOR_DRIVER,
+          providerInstanceId: ProviderInstanceId.make("cursor"),
+          threadId,
+          runtimeMode: "approval-required",
+        }),
+      );
+
+      assert.instanceOf(switched, ProviderValidationError);
+      assert.include(switched.issue, "requires full access");
+      assert.equal(routing.cursor.startSession.mock.calls.length, 0);
+      yield* routing.codex.stopAll();
+      yield* routing.cursor.stopAll();
+    }),
+  );
+
+  it.effect("rejects rollback when the active provider does not support it", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-no-rollback");
+      routing.cursor.rollbackThread.mockClear();
+      yield* provider.startSession(threadId, {
+        provider: CURSOR_DRIVER,
+        providerInstanceId: ProviderInstanceId.make("cursor"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const rejected = yield* Effect.flip(provider.rollbackConversation({ threadId, numTurns: 1 }));
+      assert.instanceOf(rejected, ProviderValidationError);
+      assert.include(rejected.issue, "does not support conversation rollback");
+      assert.equal(routing.cursor.rollbackThread.mock.calls.length, 0);
+      yield* routing.cursor.stopAll();
+    }),
+  );
+
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

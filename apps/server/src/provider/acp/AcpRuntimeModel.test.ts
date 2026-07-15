@@ -334,6 +334,21 @@ describe("AcpRuntimeModel", () => {
         },
       },
     ]);
+
+    const thoughtResult = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "reasoning from acp" },
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+    expect(thoughtResult.events).toEqual([
+      expect.objectContaining({
+        _tag: "ContentDelta",
+        streamKind: "reasoning_text",
+        text: "reasoning from acp",
+      }),
+    ]);
   });
 
   it("keeps permission request parsing compatible with loose extension payloads", () => {
