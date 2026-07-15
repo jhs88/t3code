@@ -5,6 +5,7 @@ import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -63,6 +64,8 @@ export interface AcpSessionRuntimeOptions {
   readonly resumeSessionId?: string;
   readonly sessionLoadTimeout?: Duration.Input;
   readonly sessionLoadReplayIdleGap?: Duration.Input;
+  /** Whether a failed session/load may fall back to creating a new session. */
+  readonly resumeFailureMode?: "create-new" | "fail";
   readonly clientCapabilities?: EffectAcpSchema.InitializeRequest["clientCapabilities"];
   readonly clientInfo: {
     readonly name: string;
@@ -246,6 +249,8 @@ export class AcpSessionRuntime extends Context.Service<
   }
 >()("t3/provider/acp/AcpSessionRuntime") {}
 
+export type AcpSessionRuntimeShape = AcpSessionRuntime["Service"];
+
 interface AcpStartedState extends AcpSessionRuntimeStartResult {}
 
 type AcpStartState =
@@ -289,7 +294,9 @@ export const make = (
           }),
       ),
     );
-    const assistantSegmentRef = yield* Ref.make<AcpAssistantSegmentState>({ nextSegmentIndex: 0 });
+    const assistantSegmentRef = yield* Ref.make<AcpAssistantSegmentState>({
+      nextSegmentIndex: 0,
+    });
     const configOptionsRef = yield* Ref.make(sessionConfigOptionsFromSetup(undefined));
     const startStateRef = yield* Ref.make<AcpStartState>({ _tag: "NotStarted" });
     const promptSerializationSemaphore = yield* Semaphore.make(1);
@@ -579,8 +586,7 @@ export const make = (
           }),
         );
 
-        sessionId = options.resumeSessionId;
-        sessionSetupResult = yield* Effect.gen(function* () {
+        const resumed = yield* Effect.gen(function* () {
           yield* logRequest({
             method: "session/load",
             payload: loadPayload,
@@ -629,7 +635,26 @@ export const make = (
           );
 
           return loaded;
-        }).pipe(Effect.ensuring(Ref.set(sessionLoadGateRef, Option.none())));
+        }).pipe(Effect.ensuring(Ref.set(sessionLoadGateRef, Option.none())), Effect.exit);
+
+        if (Exit.isSuccess(resumed)) {
+          sessionId = options.resumeSessionId;
+          sessionSetupResult = resumed.value;
+        } else if (options.resumeFailureMode === "fail") {
+          return yield* Effect.failCause(resumed.cause);
+        } else {
+          const createPayload = {
+            cwd: options.cwd,
+            mcpServers: options.mcpServers ?? [],
+          } satisfies EffectAcpSchema.NewSessionRequest;
+          const created = yield* runLoggedRequest(
+            "session/new",
+            createPayload,
+            acp.agent.createSession(createPayload),
+          );
+          sessionId = created.sessionId;
+          sessionSetupResult = created;
+        }
       } else {
         const createPayload = {
           cwd: options.cwd,

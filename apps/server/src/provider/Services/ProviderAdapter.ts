@@ -13,6 +13,7 @@ import type {
   ProviderDriverKind,
   ProviderUserInputAnswers,
   ProviderRuntimeEvent,
+  RuntimeMode,
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
@@ -25,11 +26,32 @@ import type * as Stream from "effect/Stream";
 
 export type ProviderSessionModelSwitchMode = "in-session" | "unsupported";
 
+export const DEFAULT_PROVIDER_RUNTIME_MODES: ReadonlyArray<RuntimeMode> = [
+  "approval-required",
+  "auto-accept-edits",
+  "full-access",
+];
+
 export interface ProviderAdapterCapabilities {
   /**
    * Declares whether changing the model on an existing session is supported.
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
+  readonly allowedRuntimeModes?: ReadonlyArray<RuntimeMode>;
+  readonly runtimeModeReason?: string;
+  readonly supportsConversationRollback?: boolean;
+}
+
+export function getAllowedRuntimeModes(
+  capabilities: ProviderAdapterCapabilities,
+): ReadonlyArray<RuntimeMode> {
+  return capabilities.allowedRuntimeModes?.length
+    ? capabilities.allowedRuntimeModes
+    : DEFAULT_PROVIDER_RUNTIME_MODES;
+}
+
+export function supportsConversationRollback(capabilities: ProviderAdapterCapabilities): boolean {
+  return capabilities.supportsConversationRollback ?? true;
 }
 
 export interface ProviderThreadTurnSnapshot {
