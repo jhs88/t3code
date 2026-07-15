@@ -18,6 +18,7 @@ import {
 } from "./keybindings.ts";
 import { EditorId } from "./editor.ts";
 import { ModelCapabilities } from "./model.ts";
+import { RuntimeMode } from "./orchestration.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { ServerSettings } from "./settings.ts";
 
@@ -167,6 +168,12 @@ export const ServerProvider = Schema.Struct({
   continuation: Schema.optional(ServerProviderContinuation),
   showInteractionModeToggle: Schema.optional(Schema.Boolean),
   requiresNewThreadForModelChange: Schema.optional(Schema.Boolean),
+  // Optional for back-compat. Consumers treat absence as support for every
+  // runtime mode, while current producers emit the capability explicitly.
+  allowedRuntimeModes: Schema.optional(Schema.Array(RuntimeMode)),
+  runtimeModeReason: Schema.optional(TrimmedNonEmptyString),
+  // Optional for back-compat. Absence means rollback is supported.
+  supportsConversationRollback: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean,
   installed: Schema.Boolean,
   version: Schema.NullOr(TrimmedNonEmptyString),

@@ -312,6 +312,7 @@ const IMAGE_ONLY_BOOTSTRAP_PROMPT =
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
+const EMPTY_REVERT_TURN_COUNTS = new Map<MessageId, number>();
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
 function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
   const transitionGroupRef = useRef<HTMLDivElement | null>(null);
@@ -4428,6 +4429,10 @@ function ChatViewContent(props: ChatViewProps) {
     async (turnCount: number) => {
       const localApi = readLocalApi();
       if (!localApi || !activeThread || isRevertingCheckpoint) return;
+      if (activeProviderStatus?.supportsConversationRollback === false) {
+        setThreadError(activeThread.id, "This provider does not support conversation rollback.");
+        return;
+      }
 
       if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
         setThreadError(
@@ -4471,6 +4476,7 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [
       activeThread,
+      activeProviderStatus?.supportsConversationRollback,
       activeEnvironmentUnavailable,
       activeEnvironmentUnavailableLabel,
       environmentId,
@@ -5705,7 +5711,6 @@ function ChatViewContent(props: ChatViewProps) {
             onDeleteProjectScript={deleteProjectScript}
           />
         </header>
-
         <ThreadErrorBanner
           error={threadError}
           onDismiss={() => setThreadError(activeThread.id, null)}
@@ -5741,7 +5746,11 @@ function ChatViewContent(props: ChatViewProps) {
                 activeThreadEnvironmentId={activeThread.environmentId}
                 routeThreadKey={routeThreadKey}
                 onOpenTurnDiff={onOpenTurnDiff}
-                revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
+                revertTurnCountByUserMessageId={
+                  activeProviderStatus?.supportsConversationRollback === false
+                    ? EMPTY_REVERT_TURN_COUNTS
+                    : revertTurnCountByUserMessageId
+                }
                 onRevertUserMessage={onRevertUserMessage}
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 onImageExpand={onExpandTimelineImage}

@@ -62,11 +62,14 @@ function readInstanceCustomModels(
   if (instanceId !== defaultInstanceId) {
     return [];
   }
-  const legacyProviders = settings.providers as Record<
-    string,
-    { readonly customModels: ReadonlyArray<string> } | undefined
-  >;
-  return legacyProviders[driverKind]?.customModels ?? [];
+  const legacyProvider = (settings.providers as Record<string, unknown>)[driverKind];
+  if (legacyProvider === null || typeof legacyProvider !== "object") {
+    return [];
+  }
+  const customModels = (legacyProvider as Record<string, unknown>).customModels;
+  return Array.isArray(customModels)
+    ? customModels.filter((entry): entry is string => typeof entry === "string")
+    : [];
 }
 
 export interface AppModelOption {

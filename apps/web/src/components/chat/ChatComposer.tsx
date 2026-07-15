@@ -277,6 +277,8 @@ function isInsideComposerFloatingLayer(element: Element): boolean {
 
 const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
   showInteractionModeToggle: boolean;
+  allowedRuntimeModes: ReadonlyArray<RuntimeMode>;
+  runtimeModeReason?: string | undefined;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   showPlanToggle: boolean;
@@ -339,13 +341,22 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
           onValueChange={(value) => props.onRuntimeModeChange(value!)}
         >
           <TooltipTrigger
-            render={<ComposerSelectControl className="font-medium" aria-label="Runtime mode" />}
+            render={
+              <ComposerSelectControl
+                className="font-medium"
+                aria-label="Runtime mode"
+                disabled={
+                  props.allowedRuntimeModes.length === 1 &&
+                  props.allowedRuntimeModes.includes(props.runtimeMode)
+                }
+              />
+            }
           >
             <ComposerControlIcon icon={RuntimeModeIcon} />
             <SelectValue>{runtimeModeOption.label}</SelectValue>
           </TooltipTrigger>
           <SelectPopup alignItemWithTrigger={false}>
-            {runtimeModeOptions.map((mode) => {
+            {props.allowedRuntimeModes.map((mode) => {
               const option = runtimeModeConfig[mode];
               const OptionIcon = option.icon;
               return (
@@ -366,7 +377,9 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
             })}
           </SelectPopup>
         </Select>
-        <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
+        <TooltipPopup side="top">
+          {props.runtimeModeReason ?? runtimeModeOption.description}
+        </TooltipPopup>
       </Tooltip>
 
       {interactionModeToggle}
@@ -905,13 +918,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
   const composerProviderControls = useMemo(
     () => ({
-      showInteractionModeToggle: getProviderInteractionModeToggle(
-        providerStatuses,
-        selectedProvider,
-      ),
+      showInteractionModeToggle:
+        selectedProviderStatus?.showInteractionModeToggle ??
+        getProviderInteractionModeToggle(providerStatuses, selectedProvider),
+      allowedRuntimeModes: selectedProviderStatus?.allowedRuntimeModes ?? runtimeModeOptions,
+      runtimeModeReason: selectedProviderStatus?.runtimeModeReason,
     }),
-    [providerStatuses, selectedProvider],
+    [providerStatuses, selectedProvider, selectedProviderStatus],
   );
+  useEffect(() => {
+    if (!composerProviderControls.showInteractionModeToggle && interactionMode === "plan") {
+      handleInteractionModeChange("default");
+    }
+  }, [composerProviderControls, handleInteractionModeChange, interactionMode]);
   const selectedModelSelection = useMemo<ModelSelection>(
     () => createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
     [selectedInstanceId, selectedModel, selectedModelOptionsForDispatch],
@@ -1865,6 +1884,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     event: KeyboardEvent,
   ) => {
     if (key === "Tab" && event.shiftKey) {
+      if (!composerProviderControls.showInteractionModeToggle) return false;
       toggleInteractionMode();
       return true;
     }
@@ -3104,10 +3124,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 {isComposerFooterCompact ? (
                   <CompactComposerControlsMenu
                     activePlan={showPlanSidebarToggle}
+                    allowedRuntimeModes={composerProviderControls.allowedRuntimeModes}
                     interactionMode={interactionMode}
                     planSidebarLabel={planSidebarLabel}
                     planSidebarOpen={planSidebarOpen}
                     runtimeMode={runtimeMode}
+                    runtimeModeReason={composerProviderControls.runtimeModeReason}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     traitsMenuContent={providerTraitsMenuContent}
                     onToggleInteractionMode={toggleInteractionMode}
@@ -3124,6 +3146,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     ) : null}
                     <ComposerFooterModeControls
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
+                      allowedRuntimeModes={composerProviderControls.allowedRuntimeModes}
+                      runtimeModeReason={composerProviderControls.runtimeModeReason}
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
                       showPlanToggle={showPlanSidebarToggle}

@@ -6,7 +6,7 @@ import { ServerProvider } from "./server.ts";
 const decodeServerProvider = Schema.decodeUnknownSync(ServerProvider);
 
 describe("ServerProvider", () => {
-  it("defaults capability arrays when decoding provider snapshots", () => {
+  it("decodes legacy provider snapshots without capability fields", () => {
     const parsed = decodeServerProvider({
       instanceId: "codex",
       driver: "codex",
@@ -23,6 +23,9 @@ describe("ServerProvider", () => {
 
     expect(parsed.slashCommands).toEqual([]);
     expect(parsed.skills).toEqual([]);
+    expect(parsed.allowedRuntimeModes).toBeUndefined();
+    expect(parsed.runtimeModeReason).toBeUndefined();
+    expect(parsed.supportsConversationRollback).toBeUndefined();
     expect(parsed.versionAdvisory).toBeUndefined();
     expect(parsed.updateState).toBeUndefined();
   });
