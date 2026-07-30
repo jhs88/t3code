@@ -19,6 +19,10 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
+import {
+  normalizeProviderComposerModes,
+  resolveProviderComposerCapabilities,
+} from "@t3tools/client-runtime/provider-capabilities";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import {
@@ -95,7 +99,11 @@ import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { ComposerControl, ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
-import { searchSlashCommandItems } from "./composerSlashCommandSearch";
+import {
+  buildBuiltInSlashCommandItems,
+  isBuiltInSlashCommandAllowed,
+  searchSlashCommandItems,
+} from "./composerSlashCommandSearch";
 import {
   getComposerPromptInjectionState,
   getComposerProviderState,
@@ -182,7 +190,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
-import { getProviderDisplayName, getProviderInteractionModeToggle } from "../../providerModels";
+import { getProviderDisplayName } from "../../providerModels";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -234,7 +242,6 @@ const runtimeModeConfig: Record<
   },
 };
 
-const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
 const COMPOSER_FLOATING_LAYER_SELECTOR = [
   '[data-slot="popover-popup"]',
   '[data-slot="menu-popup"]',
@@ -917,20 +924,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedPromptEffort = composerProviderState.promptEffort;
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
   const composerProviderControls = useMemo(
-    () => ({
-      showInteractionModeToggle:
-        selectedProviderStatus?.showInteractionModeToggle ??
-        getProviderInteractionModeToggle(providerStatuses, selectedProvider),
-      allowedRuntimeModes: selectedProviderStatus?.allowedRuntimeModes ?? runtimeModeOptions,
-      runtimeModeReason: selectedProviderStatus?.runtimeModeReason,
-    }),
-    [providerStatuses, selectedProvider, selectedProviderStatus],
+    () => resolveProviderComposerCapabilities(selectedProviderStatus),
+    [selectedProviderStatus],
   );
   useEffect(() => {
-    if (!composerProviderControls.showInteractionModeToggle && interactionMode === "plan") {
-      handleInteractionModeChange("default");
+    const normalized = normalizeProviderComposerModes(composerProviderControls, {
+      runtimeMode,
+      interactionMode,
+    });
+    if (normalized.runtimeMode !== runtimeMode) {
+      handleRuntimeModeChange(normalized.runtimeMode);
     }
-  }, [composerProviderControls, handleInteractionModeChange, interactionMode]);
+    if (normalized.interactionMode !== interactionMode) {
+      handleInteractionModeChange(normalized.interactionMode);
+    }
+  }, [
+    composerProviderControls,
+    handleInteractionModeChange,
+    handleRuntimeModeChange,
+    interactionMode,
+    runtimeMode,
+  ]);
   const selectedModelSelection = useMemo<ModelSelection>(
     () => createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
     [selectedInstanceId, selectedModel, selectedModelOptionsForDispatch],
@@ -1075,29 +1089,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }));
     }
     if (composerTrigger.kind === "slash-command") {
-      const builtInSlashCommandItems = [
-        {
-          id: "slash:model",
-          type: "slash-command",
-          command: "model",
-          label: "/model",
-          description: "Switch response model for this thread",
-        },
-        {
-          id: "slash:plan",
-          type: "slash-command",
-          command: "plan",
-          label: "/plan",
-          description: "Switch this thread into plan mode",
-        },
-        {
-          id: "slash:default",
-          type: "slash-command",
-          command: "default",
-          label: "/default",
-          description: "Switch this thread back to normal build mode",
-        },
-      ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
+      const builtInSlashCommandItems = buildBuiltInSlashCommandItems(
+        composerProviderControls.showInteractionModeToggle,
+      );
       const providerSlashCommandItems = (selectedProviderStatus?.slashCommands ?? []).map(
         (command) => ({
           id: `provider-slash-command:${selectedProvider}:${command.name}`,
@@ -1131,7 +1125,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       );
     }
     return [];
-  }, [composerTrigger, selectedProvider, selectedProviderStatus, workspaceEntries.entries]);
+  }, [
+    composerProviderControls.showInteractionModeToggle,
+    composerTrigger,
+    selectedProvider,
+    selectedProviderStatus,
+    workspaceEntries.entries,
+  ]);
 
   const composerMenuOpen = Boolean(composerTrigger);
   const composerMenuSearchKey = composerTrigger
@@ -1717,6 +1717,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }
           return;
         }
+        if (
+          !isBuiltInSlashCommandAllowed(
+            item.command,
+            composerProviderControls.showInteractionModeToggle,
+          )
+        ) {
+          return;
+        }
         void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
           expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
@@ -1763,7 +1771,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
     },
-    [applyPromptReplacement, handleInteractionModeChange, resolveActiveComposerTrigger],
+    [
+      applyPromptReplacement,
+      composerProviderControls.showInteractionModeToggle,
+      handleInteractionModeChange,
+      resolveActiveComposerTrigger,
+    ],
   );
 
   const onComposerMenuItemHighlighted = useCallback(

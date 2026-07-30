@@ -2,13 +2,7 @@
 
 Pi is an Early Access coding-agent provider backed by [`svkozak/pi-acp`](https://github.com/svkozak/pi-acp). T3 Code communicates only through ACP; Pi's native RPC protocol, extensions, skills, and MCP integration remain owned by the user's Pi environment.
 
-## Prerequisites
-
-- Install Pi and configure at least one usable model or authentication provider.
-- Install `svkozak/pi-acp` and ensure both `pi` and `pi-acp` are available on the server's `PATH`.
-- Configure `pi-mcp-adapter` within Pi when MCP tools are required. T3 Code does not manage those MCP servers for Pi.
-
-The built-in provider is enabled by default. Its settings allow overriding the `pi-acp` and Pi executable paths; the default commands are `pi-acp` and `pi`.
+For installation, authentication, safety guidance, and user-visible limitations, see [Use Pi with T3 Code](../user/pi.md).
 
 ## Runtime Shape
 
@@ -26,7 +20,7 @@ Each Pi provider instance runs one eager ACP probe in the server's global provid
 
 If discovery fails, that Pi instance remains visible as unavailable with the probe diagnostic. Change an executable-path setting to reconstruct the provider and retry once, or restart the server. Re-saving unchanged settings or refreshing the snapshot does not retry the probe.
 
-## Supported MVP Behavior
+## Supported behavior
 
 - Start and resume sessions.
 - Stream assistant, reasoning, and tool lifecycle events.
@@ -37,7 +31,7 @@ If discovery fails, that Pi instance remains visible as unavailable with the pro
 - Map Pi extension selection menus to T3 structured user input.
 - Keep Pi-managed extensions, skills, and MCP tools available through the inherited Pi environment.
 
-## Limitations
+## Implementation constraints
 
 - Pi is full-access-only. `pi-acp` does not gate ordinary Pi shell or file tools before execution, so T3 Code cannot enforce standard per-tool approval mode.
 - T3 plan mode is disabled. Pi thinking levels are model options, not planning modes.
@@ -46,23 +40,34 @@ If discovery fails, that Pi instance remains visible as unavailable with the pro
 - Utility ACP sessions may appear in Pi's session history because `pi-acp` does not currently expose an ephemeral-session option.
 - T3 Code does not pass MCP server definitions to Pi. Configure MCP through `pi-mcp-adapter` in Pi itself.
 
-## Implementation Sequence
-
-1. Add Pi contracts, settings hydration, provider metadata, icon wiring, and Early Access presentation.
-2. Extract the provider-neutral ACP adapter and structured-output behavior currently embedded in Cursor, keeping provider-specific spawn, model mapping, sanitization, and errors behind small bridges.
-3. Add Pi ACP process construction, environment handling, model/thinking selection, and update-notice sanitization.
-4. Add the Pi provider probe, driver, adapter, session continuation, event mapping, and truthful unsupported operations.
-5. Add Pi text generation on the shared ACP structured-output path.
-6. Add deterministic server, contracts, and browser tests, then run one live `PI_E2E_OK` smoke conversation.
-
 ## Verification
 
 Deterministic coverage must include startup, resume, streaming, interruption, model/thinking selection, confirmations, multi-choice input, unsupported rollback, process exits, output sanitization, discovery/auth states, settings, model-picker visibility, full-access-only messaging, and disabled plan mode.
 
-Before completion, `bun fmt`, `bun lint`, `bun typecheck`, and focused tests through `bun run test` must pass. The live smoke test consumes provider tokens and may leave a Pi test session in native history.
+Use focused `vp` commands from the repository root rather than the full workspace suite. For example:
+
+```sh
+vp test run apps/server/src/provider/Layers/PiProvider.test.ts
+vp test run apps/server/src/provider/Layers/PiAdapter.test.ts
+vp test run apps/server/src/provider/acp/PiAcpSupport.test.ts
+vp test run apps/server/src/provider/Layers/ProviderRegistry.test.ts
+vp run --filter t3 typecheck
+```
+
+The opt-in live test starts the real ACP runtime, verifies model discovery, sends `Reply with exactly PI_E2E_OK and nothing else.`, and requires the trimmed assistant response to equal `PI_E2E_OK`:
+
+```sh
+T3_PI_ACP_PROBE=1 \
+T3_PI_ACP_BINARY=/path/to/pi-acp \
+T3_PI_BINARY=/path/to/pi \
+vp test run apps/server/src/provider/acp/PiAcpCliProbe.test.ts
+```
+
+`T3_PI_ACP_BINARY` defaults to `pi-acp` and `T3_PI_BINARY` defaults to `pi`. Authenticate through `pi` first. This test consumes provider usage and may persist a native Pi session.
 
 ## References
 
+- [Pi user guide](../user/pi.md)
 - [ADR 0001: Integrate Pi as an ACP-backed provider](../adr/0001-pi-provider-via-acp.md)
 - [T3 Code PR #2748: ACP-backed Pi and Hermes providers](https://github.com/pingdotgg/t3code/pull/2748)
 - [T3 Code PR #3818: Native-RPC Pi provider](https://github.com/pingdotgg/t3code/pull/3818)

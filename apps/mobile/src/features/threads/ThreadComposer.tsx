@@ -9,6 +9,10 @@ import type {
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
 import {
+  normalizeProviderComposerModes,
+  resolveProviderComposerCapabilities,
+} from "@t3tools/client-runtime/provider-capabilities";
+import {
   detectComposerTrigger,
   replaceTextRange,
   serializeComposerFileLink,
@@ -69,6 +73,7 @@ import {
 } from "../../lib/providerOptions";
 import { useComposerPathSearch } from "../../state/use-composer-path-search";
 import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerCommandPopover";
+import { buildComposerProviderControls } from "./composerProviderControls";
 
 /**
  * Height of the collapsed composer (pill + vertical padding, excluding safe-area inset).
@@ -332,6 +337,36 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       ) ?? null
     );
   }, [props.serverConfig, props.selectedThread.modelSelection.instanceId]);
+  const composerCapabilities = useMemo(
+    () => resolveProviderComposerCapabilities(selectedProviderStatus),
+    [selectedProviderStatus],
+  );
+  const composerProviderControls = useMemo(
+    () =>
+      buildComposerProviderControls(composerCapabilities, {
+        runtimeMode: currentRuntimeMode,
+        interactionMode: currentInteractionMode,
+      }),
+    [composerCapabilities, currentInteractionMode, currentRuntimeMode],
+  );
+  useEffect(() => {
+    const normalized = normalizeProviderComposerModes(composerCapabilities, {
+      runtimeMode: currentRuntimeMode,
+      interactionMode: currentInteractionMode,
+    });
+    if (normalized.runtimeMode !== currentRuntimeMode) {
+      props.onUpdateRuntimeMode(normalized.runtimeMode);
+    }
+    if (normalized.interactionMode !== currentInteractionMode) {
+      props.onUpdateInteractionMode(normalized.interactionMode);
+    }
+  }, [
+    composerCapabilities,
+    currentInteractionMode,
+    currentRuntimeMode,
+    props.onUpdateInteractionMode,
+    props.onUpdateRuntimeMode,
+  ]);
 
   // ── Trigger detection ────────────────────────────────────
   const [composerSelection, setComposerSelection] = useState(() => ({
@@ -371,29 +406,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
     if (composerTrigger.kind === "slash-command") {
       const q = composerTrigger.query.toLowerCase();
-      const allBuiltIn = [
-        {
-          id: "cmd:model",
-          type: "slash-command" as const,
-          command: "model",
-          label: "/model",
-          description: "Switch model",
-        },
-        {
-          id: "cmd:plan",
-          type: "slash-command" as const,
-          command: "plan",
-          label: "/plan",
-          description: "Switch to plan mode",
-        },
-        {
-          id: "cmd:default",
-          type: "slash-command" as const,
-          command: "default",
-          label: "/default",
-          description: "Switch to default mode",
-        },
-      ];
+      const allBuiltIn = composerProviderControls.slashCommands.map((command) => ({
+        ...command,
+        type: "slash-command" as const,
+      }));
       const builtIn = allBuiltIn.filter((item) => item.command.includes(q));
 
       const providerCommands: ComposerCommandItem[] = [];
@@ -509,7 +525,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
 
     return [];
-  }, [composerTrigger, pathSearch.entries, selectedProviderStatus]);
+  }, [
+    composerProviderControls.slashCommands,
+    composerTrigger,
+    pathSearch.entries,
+    selectedProviderStatus,
+  ]);
 
   // ── Handle command selection ──────────────────────────────
   const { onChangeDraftMessage, onUpdateInteractionMode, draftMessage, onSendMessage } = props;
@@ -544,6 +565,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         item.type === "slash-command" &&
         (item.command === "plan" || item.command === "default")
       ) {
+        if (item.command === "plan" && !composerCapabilities.showInteractionModeToggle) {
+          return;
+        }
         const result = replaceTextRange(
           draftMessage,
           composerTrigger.rangeStart,
@@ -576,7 +600,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       setComposerSelection({ start: result.cursor, end: result.cursor });
       onChangeDraftMessage(result.text);
     },
-    [composerTrigger, draftMessage, onChangeDraftMessage, onUpdateInteractionMode],
+    [
+      composerCapabilities.showInteractionModeToggle,
+      composerTrigger,
+      draftMessage,
+      onChangeDraftMessage,
+      onUpdateInteractionMode,
+    ],
   );
 
   // ── Model menu ───────────────────────────────────────────
@@ -630,49 +660,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const optionsMenuActions = useMemo(
     () => [
       ...buildProviderOptionMenuActions(providerOptionDescriptors),
-      {
-        id: "options-runtime",
-        title: "Runtime",
-        subtitle:
-          currentRuntimeMode === "approval-required"
-            ? "Approve actions"
-            : currentRuntimeMode === "auto-accept-edits"
-              ? "Auto-accept edits"
-              : currentRuntimeMode === "auto"
-                ? "Auto"
-                : "Full access",
-        subactions: [
-          { id: "options:runtime:approval-required", title: "Approve actions" },
-          { id: "options:runtime:auto-accept-edits", title: "Auto-accept edits" },
-          { id: "options:runtime:auto", title: "Auto" },
-          { id: "options:runtime:full-access", title: "Full access" },
-        ].map((option) => {
-          const value = option.id.replace("options:runtime:", "");
-          return {
-            id: option.id,
-            title: option.title,
-            state: currentRuntimeMode === value ? ("on" as const) : undefined,
-          };
-        }),
-      },
-      {
-        id: "options-interaction",
-        title: "Interaction",
-        subtitle: currentInteractionMode === "plan" ? "Plan" : "Default",
-        subactions: [
-          { id: "options:interaction:default", title: "Default" },
-          { id: "options:interaction:plan", title: "Plan" },
-        ].map((option) => {
-          const value = option.id.replace("options:interaction:", "");
-          return {
-            id: option.id,
-            title: option.title,
-            state: currentInteractionMode === value ? ("on" as const) : undefined,
-          };
-        }),
-      },
+      composerProviderControls.runtimeAction,
+      ...(composerProviderControls.interactionAction
+        ? [composerProviderControls.interactionAction]
+        : []),
     ],
-    [currentInteractionMode, currentRuntimeMode, providerOptionDescriptors],
+    [composerProviderControls, providerOptionDescriptors],
   );
 
   // ── Menu handlers ────────────────────────────────────────

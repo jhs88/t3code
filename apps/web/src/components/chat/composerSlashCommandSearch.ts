@@ -1,3 +1,4 @@
+import { isProviderInteractionModeSupported } from "@t3tools/client-runtime/provider-capabilities";
 import {
   insertRankedSearchResult,
   normalizeSearchQuery,
@@ -5,6 +6,50 @@ import {
 } from "@t3tools/shared/searchRanking";
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
+
+type BuiltInSlashCommandItem = Extract<ComposerCommandItem, { type: "slash-command" }>;
+
+const BUILT_IN_SLASH_COMMAND_ITEMS = [
+  {
+    id: "slash:model",
+    type: "slash-command",
+    command: "model",
+    label: "/model",
+    description: "Switch response model for this thread",
+  },
+  {
+    id: "slash:plan",
+    type: "slash-command",
+    command: "plan",
+    label: "/plan",
+    description: "Switch this thread into plan mode",
+  },
+  {
+    id: "slash:default",
+    type: "slash-command",
+    command: "default",
+    label: "/default",
+    description: "Switch this thread back to normal build mode",
+  },
+] satisfies ReadonlyArray<BuiltInSlashCommandItem>;
+
+export function isBuiltInSlashCommandAllowed(
+  command: BuiltInSlashCommandItem["command"],
+  showInteractionModeToggle: boolean,
+): boolean {
+  return (
+    command === "model" ||
+    isProviderInteractionModeSupported({ showInteractionModeToggle }, command)
+  );
+}
+
+export function buildBuiltInSlashCommandItems(
+  showInteractionModeToggle: boolean,
+): ReadonlyArray<BuiltInSlashCommandItem> {
+  return BUILT_IN_SLASH_COMMAND_ITEMS.filter((item) =>
+    isBuiltInSlashCommandAllowed(item.command, showInteractionModeToggle),
+  );
+}
 
 function scoreSlashCommandItem(
   item: Extract<ComposerCommandItem, { type: "slash-command" | "provider-slash-command" }>,

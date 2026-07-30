@@ -850,6 +850,24 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("forwards auto runtime mode to providers with default capabilities", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-auto-runtime");
+
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "auto",
+      });
+
+      const startInput = routing.codex.startSession.mock.calls.at(-1)?.[0];
+      assert.strictEqual(startInput?.runtimeMode, "auto");
+      yield* routing.codex.stopAll();
+    }),
+  );
+
   it.effect("rejects unsupported runtime modes, including provider switches", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

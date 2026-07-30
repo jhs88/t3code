@@ -55,6 +55,11 @@ import {
 } from "../../state/use-remote-environment-registry";
 import { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { type VcsRef } from "@t3tools/client-runtime/state/vcs";
+import {
+  normalizeProviderComposerModes,
+  resolveProviderComposerCapabilities,
+  type ProviderComposerCapabilities,
+} from "@t3tools/client-runtime/provider-capabilities";
 
 type WorkspaceMode = "local" | "worktree";
 
@@ -136,6 +141,7 @@ type NewTaskFlowContextValue = {
   readonly selectedModel: ModelSelection | null;
   readonly selectedModelOption: ModelOption | null;
   readonly selectedProviderSkills: ReadonlyArray<ServerProviderSkill>;
+  readonly composerCapabilities: ProviderComposerCapabilities;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
   readonly filteredBranches: ReadonlyArray<VcsRef>;
   readonly reset: () => void;
@@ -391,12 +397,20 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         option.selection.instanceId === selectedModel.instanceId &&
         option.selection.model === selectedModel.model,
     ) ?? null;
-  const selectedProviderSkills = useMemo(
+  const selectedProviderStatus = useMemo(
     () =>
       selectedEnvironmentServerConfig?.providers.find(
         (provider) => provider.instanceId === selectedModel?.instanceId,
-      )?.skills ?? [],
+      ) ?? null,
     [selectedEnvironmentServerConfig, selectedModel?.instanceId],
+  );
+  const selectedProviderSkills = useMemo(
+    () => selectedProviderStatus?.skills ?? [],
+    [selectedProviderStatus],
+  );
+  const composerCapabilities = useMemo(
+    () => resolveProviderComposerCapabilities(selectedProviderStatus),
+    [selectedProviderStatus],
   );
   const setSelectedModelKey = useCallback(
     (key: string | null) => {
@@ -635,6 +649,18 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     },
     [selectedProjectDraftKey],
   );
+  useEffect(() => {
+    const normalized = normalizeProviderComposerModes(composerCapabilities, {
+      runtimeMode,
+      interactionMode,
+    });
+    if (normalized.runtimeMode !== runtimeMode) {
+      setRuntimeMode(normalized.runtimeMode);
+    }
+    if (normalized.interactionMode !== interactionMode) {
+      setInteractionMode(normalized.interactionMode);
+    }
+  }, [composerCapabilities, interactionMode, runtimeMode, setInteractionMode, setRuntimeMode]);
 
   const beginEditingPendingTask = useCallback((messageId: string): boolean => {
     const message = findQueuedPendingTask(messageId);
@@ -846,6 +872,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectedModel,
       selectedModelOption,
       selectedProviderSkills,
+      composerCapabilities,
       providerGroups,
       filteredBranches,
       reset,
@@ -879,6 +906,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       branchQuery,
       branchesLoading,
       buildPendingTaskMessage,
+      composerCapabilities,
       cancelEditingPendingTask,
       editingPendingTask,
       environments,

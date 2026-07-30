@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
+  RUNTIME_MODES,
   ModelSelection,
   OrchestrationCommand,
   OrchestrationEvent,
@@ -24,6 +25,15 @@ import {
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
 } from "./orchestration.ts";
+
+it("exports every supported runtime mode in presentation order", () => {
+  assert.deepStrictEqual(RUNTIME_MODES, [
+    "approval-required",
+    "auto-accept-edits",
+    "auto",
+    "full-access",
+  ]);
+});
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);

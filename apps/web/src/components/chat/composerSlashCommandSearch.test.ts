@@ -2,7 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind } from "@t3tools/contracts";
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
-import { searchSlashCommandItems } from "./composerSlashCommandSearch";
+import {
+  buildBuiltInSlashCommandItems,
+  isBuiltInSlashCommandAllowed,
+  searchSlashCommandItems,
+} from "./composerSlashCommandSearch";
 
 describe("searchSlashCommandItems", () => {
   const claudeDriver = ProviderDriverKind.make("claudeAgent");
@@ -67,5 +71,24 @@ describe("searchSlashCommandItems", () => {
     expect(searchSlashCommandItems(items, "gfc").map((item) => item.id)).toEqual([
       "provider-slash-command:claudeAgent:gh-fix-ci",
     ]);
+  });
+});
+
+describe("built-in slash command capabilities", () => {
+  it("includes plan for providers that support interaction modes", () => {
+    expect(buildBuiltInSlashCommandItems(true).map((item) => item.command)).toEqual([
+      "model",
+      "plan",
+      "default",
+    ]);
+  });
+
+  it("omits and rejects plan while retaining default for providers without plan mode", () => {
+    expect(buildBuiltInSlashCommandItems(false).map((item) => item.command)).toEqual([
+      "model",
+      "default",
+    ]);
+    expect(isBuiltInSlashCommandAllowed("plan", false)).toBe(false);
+    expect(isBuiltInSlashCommandAllowed("default", false)).toBe(true);
   });
 });

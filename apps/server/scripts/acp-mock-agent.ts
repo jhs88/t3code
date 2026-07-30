@@ -36,6 +36,8 @@ const emitStaleXAiPromptCompleteBeforeSecondHang =
 const emitOverlappingXAiPromptCompleteOutOfOrder =
   process.env.T3_ACP_EMIT_OVERLAPPING_XAI_PROMPT_COMPLETE_OUT_OF_ORDER === "1";
 const failPrompt = process.env.T3_ACP_FAIL_PROMPT === "1";
+const failAuth = process.env.T3_ACP_FAIL_AUTH === "1";
+const emptyConfigOptions = process.env.T3_ACP_EMPTY_CONFIG_OPTIONS === "1";
 const failSetConfigOption = process.env.T3_ACP_FAIL_SET_CONFIG_OPTION === "1";
 const exitOnSetConfigOption = process.env.T3_ACP_EXIT_ON_SET_CONFIG_OPTION === "1";
 const promptResponseText = process.env.T3_ACP_PROMPT_RESPONSE_TEXT;
@@ -94,6 +96,9 @@ process.once("exit", (code) => {
 });
 
 function configOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
+  if (emptyConfigOptions) {
+    return [];
+  }
   if (parameterizedModelPicker) {
     const baseOptions: Array<AcpSchema.SessionConfigOption> = [
       {
@@ -303,11 +308,18 @@ const program = Effect.gen(function* () {
       return {
         protocolVersion: 1,
         agentCapabilities: { loadSession: true },
+        agentInfo: { name: "t3-acp-mock-agent", version: "0.0.0-test" },
       };
     }),
   );
 
-  yield* agent.handleAuthenticate(() => Effect.succeed({}));
+  yield* agent.handleAuthenticate(() =>
+    failAuth
+      ? AcpError.AcpRequestError.internalError(
+          "Authentication required: Configure an API key or log in with an OAuth provider.",
+        )
+      : Effect.succeed({}),
+  );
 
   yield* agent.handleCreateSession(() =>
     Effect.succeed({

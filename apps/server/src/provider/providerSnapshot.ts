@@ -1,3 +1,4 @@
+import { RUNTIME_MODES } from "@t3tools/contracts";
 import type {
   ProviderDriverKind,
   ModelCapabilities,
@@ -237,11 +238,7 @@ export function buildServerProvider(input: {
     ...(typeof input.presentation.requiresNewThreadForModelChange === "boolean"
       ? { requiresNewThreadForModelChange: input.presentation.requiresNewThreadForModelChange }
       : {}),
-    allowedRuntimeModes: input.presentation.allowedRuntimeModes ?? [
-      "approval-required",
-      "auto-accept-edits",
-      "full-access",
-    ],
+    allowedRuntimeModes: input.presentation.allowedRuntimeModes ?? [...RUNTIME_MODES],
     ...(input.presentation.runtimeModeReason
       ? { runtimeModeReason: input.presentation.runtimeModeReason }
       : {}),

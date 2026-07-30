@@ -7,6 +7,7 @@
  *
  * @module ProviderAdapter
  */
+import { RUNTIME_MODES } from "@t3tools/contracts";
 import type {
   ApprovalRequestId,
   ProviderApprovalDecision,
@@ -26,11 +27,7 @@ import type * as Stream from "effect/Stream";
 
 export type ProviderSessionModelSwitchMode = "in-session" | "unsupported";
 
-export const DEFAULT_PROVIDER_RUNTIME_MODES: ReadonlyArray<RuntimeMode> = [
-  "approval-required",
-  "auto-accept-edits",
-  "full-access",
-];
+export const DEFAULT_PROVIDER_RUNTIME_MODES: ReadonlyArray<RuntimeMode> = RUNTIME_MODES;
 
 export interface ProviderAdapterCapabilities {
   /**

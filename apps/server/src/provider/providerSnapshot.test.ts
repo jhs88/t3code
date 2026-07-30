@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { ModelCapabilities } from "@t3tools/contracts";
+import { ProviderDriverKind, type ModelCapabilities } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
@@ -10,10 +10,36 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
+  buildServerProvider,
   isCommandMissingCause,
   providerModelsFromSettings,
   spawnAndCollect,
 } from "./providerSnapshot.ts";
+
+describe("buildServerProvider", () => {
+  it("advertises every runtime mode when the provider has no restriction", () => {
+    const provider = buildServerProvider({
+      driver: ProviderDriverKind.make("codex"),
+      presentation: { displayName: "Codex" },
+      enabled: true,
+      checkedAt: "2026-07-30T00:00:00.000Z",
+      models: [],
+      probe: {
+        installed: true,
+        version: null,
+        status: "ready",
+        auth: { status: "authenticated" },
+      },
+    });
+
+    expect(provider.allowedRuntimeModes).toEqual([
+      "approval-required",
+      "auto-accept-edits",
+      "auto",
+      "full-access",
+    ]);
+  });
+});
 
 const OPENCODE_CUSTOM_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [

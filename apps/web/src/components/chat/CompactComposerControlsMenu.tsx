@@ -1,4 +1,4 @@
-import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
+import { ProviderInteractionMode, RUNTIME_MODES, RuntimeMode } from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
 import { EllipsisIcon, ListTodoIcon } from "lucide-react";
 import { Button } from "../ui/button";
@@ -11,12 +11,6 @@ import {
   MenuSeparator as MenuDivider,
   MenuTrigger,
 } from "../ui/menu";
-
-const DEFAULT_RUNTIME_MODES: ReadonlyArray<RuntimeMode> = [
-  "approval-required",
-  "auto-accept-edits",
-  "full-access",
-];
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   activePlan: boolean;
@@ -32,7 +26,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   onTogglePlanSidebar: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
-  const allowedRuntimeModes = props.allowedRuntimeModes ?? DEFAULT_RUNTIME_MODES;
+  const allowedRuntimeModes = props.allowedRuntimeModes ?? RUNTIME_MODES;
 
   return (
     <Menu>

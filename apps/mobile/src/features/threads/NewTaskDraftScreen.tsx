@@ -25,6 +25,7 @@ import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStri
 import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ComposerSurface } from "./ThreadComposer";
+import { buildComposerProviderControls } from "./composerProviderControls";
 
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { convertPastedImagesToAttachments, pickComposerImages } from "../../lib/composerImages";
@@ -570,53 +571,24 @@ export function NewTaskDraftScreen(props: {
       }),
     [flow.selectedModel?.options, flow.selectedModelOption?.capabilities],
   );
+  const composerProviderControls = useMemo(
+    () =>
+      buildComposerProviderControls(flow.composerCapabilities, {
+        runtimeMode: flow.runtimeMode,
+        interactionMode: flow.interactionMode,
+      }),
+    [flow.composerCapabilities, flow.interactionMode, flow.runtimeMode],
+  );
 
   const optionsMenuActions = useMemo(
     () => [
       ...buildProviderOptionMenuActions(providerOptionDescriptors),
-      {
-        id: "options-runtime",
-        title: "Runtime",
-        subtitle:
-          flow.runtimeMode === "approval-required"
-            ? "Approve actions"
-            : flow.runtimeMode === "auto-accept-edits"
-              ? "Auto-accept edits"
-              : flow.runtimeMode === "auto"
-                ? "Auto"
-                : "Full access",
-        subactions: [
-          { id: "options:runtime:approval-required", title: "Approve actions" },
-          { id: "options:runtime:auto-accept-edits", title: "Auto-accept edits" },
-          { id: "options:runtime:auto", title: "Auto" },
-          { id: "options:runtime:full-access", title: "Full access" },
-        ].map((option) => {
-          const value = option.id.replace("options:runtime:", "");
-          return {
-            id: option.id,
-            title: option.title,
-            state: flow.runtimeMode === value ? ("on" as const) : undefined,
-          };
-        }),
-      },
-      {
-        id: "options-interaction",
-        title: "Interaction",
-        subtitle: flow.interactionMode === "plan" ? "Plan" : "Default",
-        subactions: [
-          { id: "options:interaction:default", title: "Default" },
-          { id: "options:interaction:plan", title: "Plan" },
-        ].map((option) => {
-          const value = option.id.replace("options:interaction:", "");
-          return {
-            id: option.id,
-            title: option.title,
-            state: flow.interactionMode === value ? ("on" as const) : undefined,
-          };
-        }),
-      },
+      composerProviderControls.runtimeAction,
+      ...(composerProviderControls.interactionAction
+        ? [composerProviderControls.interactionAction]
+        : []),
     ],
-    [flow.interactionMode, flow.runtimeMode, providerOptionDescriptors],
+    [composerProviderControls, providerOptionDescriptors],
   );
 
   const workspaceMenuActions = useMemo(() => {

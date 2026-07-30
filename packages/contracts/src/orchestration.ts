@@ -113,12 +113,13 @@ export const ModelSelection = ModelSelectionSource.pipe(
 );
 export type ModelSelection = typeof ModelSelection.Type;
 
-export const RuntimeMode = Schema.Literals([
+export const RUNTIME_MODES = [
   "approval-required",
   "auto-accept-edits",
   "auto",
   "full-access",
-]);
+] as const;
+export const RuntimeMode = Schema.Literals(RUNTIME_MODES);
 export type RuntimeMode = typeof RuntimeMode.Type;
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);

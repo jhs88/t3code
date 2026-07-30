@@ -93,7 +93,19 @@ The live backend agent implementation and its event stream. The main service is 
 
 #### Provider
 
-The backend agent runtime that actually performs work. See [ProviderService.ts][14], [ProviderAdapter.ts][15], and [CodexAdapter.ts][17].
+A coding-agent integration available to T3 Code, such as Codex, Cursor, or Pi. Avoid using _backend_ or _agent type_ for this concept. See [ProviderService.ts][14], [ProviderAdapter.ts][15], and [CodexAdapter.ts][17].
+
+#### Provider instance
+
+A configured occurrence of a provider with its own identity, settings, and lifecycle. Multiple instances may use the same provider implementation. Avoid _provider configuration_ or _account_ when referring to the instance itself.
+
+#### Provider session
+
+An active or resumable conversation owned by one provider instance. Avoid _process_ or _connection_ when referring to the conversation.
+
+#### ACP-backed provider
+
+A provider whose sessions are presented to T3 Code through the Agent Client Protocol, regardless of the provider's internal protocol. Pi is an ACP-backed provider through `pi-acp`; avoid _native ACP agent_ for this concept.
 
 #### Session
 
@@ -101,7 +113,7 @@ The live provider-backed runtime attached to a thread. Session shape is in [the 
 
 #### Runtime mode
 
-The safety/access mode for a thread or session. In [the contracts][1], the main values are `approval-required` and `full-access`. See [runtime-modes.md][18].
+The safety/access mode for a thread or session. In [the contracts][1], the values are `approval-required`, `auto-accept-edits`, `auto`, and `full-access`. Providers may advertise a supported subset. See [runtime-modes.md][18].
 
 #### Interaction mode
 

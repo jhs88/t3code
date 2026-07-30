@@ -1,12 +1,13 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
 import type { PiSettings, ServerProviderModel } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
+import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
-import * as Result from "effect/Result";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
@@ -29,6 +30,13 @@ const PI_PRESENTATION = {
   runtimeModeReason: PI_ADAPTER_CAPABILITIES.runtimeModeReason,
   supportsConversationRollback: PI_ADAPTER_CAPABILITIES.supportsConversationRollback,
 } as const;
+
+type PiProbeTimeout = <A, E, R>(
+  probe: Effect.Effect<A, E, R>,
+) => Effect.Effect<Option.Option<A>, E, R>;
+
+const timeoutPiProbe: PiProbeTimeout = (probe) =>
+  Effect.timeoutOption(probe, PI_ACP_PROBE_TIMEOUT_MS);
 
 interface PiSelectOption {
   readonly value: string;
@@ -179,6 +187,7 @@ export function buildInitialPiProviderSnapshot(
 export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function* (
   piSettings: PiSettings,
   environment: NodeJS.ProcessEnv = process.env,
+  applyProbeTimeout: PiProbeTimeout = timeoutPiProbe,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -205,26 +214,31 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
   }
 
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const probe = yield* Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-pi-provider-probe-" });
-    const runtime = yield* makePiAcpRuntime({
-      piSettings,
-      environment,
-      childProcessSpawner: spawner,
-      cwd,
-      clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
-    });
-    const started = yield* runtime.start();
-    return {
-      version: started.initializeResult.agentInfo?.version?.trim() || null,
-      models: buildPiModelsFromConfigOptions(yield* runtime.getConfigOptions),
-    };
-  }).pipe(Effect.scoped, Effect.timeoutOption(PI_ACP_PROBE_TIMEOUT_MS), Effect.result);
+  const probeExit = yield* Effect.exit(
+    applyProbeTimeout(
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-pi-provider-probe-" });
+        const runtime = yield* makePiAcpRuntime({
+          piSettings,
+          environment,
+          childProcessSpawner: spawner,
+          cwd,
+          clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
+        });
+        const started = yield* runtime.start();
+        return {
+          version: started.initializeResult.agentInfo?.version?.trim() || null,
+          models: buildPiModelsFromConfigOptions(yield* runtime.getConfigOptions),
+        };
+      }).pipe(Effect.scoped),
+    ),
+  );
 
-  if (Result.isFailure(probe)) {
-    const missing = isMissingBinary(probe.failure);
-    const unauthenticated = isAuthenticationFailure(probe.failure);
+  if (Exit.isFailure(probeExit)) {
+    const failure = Cause.squash(probeExit.cause);
+    const missing = isMissingBinary(failure);
+    const unauthenticated = isAuthenticationFailure(failure);
     return buildServerProvider({
       driver: PROVIDER,
       presentation: PI_PRESENTATION,
@@ -241,12 +255,12 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
           ? "Pi ACP adapter (`pi-acp`) is not installed or not on PATH. Install it or update the ACP adapter path."
           : unauthenticated
             ? "Pi is not configured with an authenticated model provider. Run `pi` in a terminal and configure a provider."
-            : `Pi ACP probe failed: ${errorDetail(probe.failure) || "unknown error"}.`,
+            : `Pi ACP probe failed: ${errorDetail(failure) || "unknown error"}.`,
       },
     });
   }
 
-  if (Option.isNone(probe.success)) {
+  if (Option.isNone(probeExit.value)) {
     return buildServerProvider({
       driver: PROVIDER,
       presentation: PI_PRESENTATION,
@@ -264,7 +278,25 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     });
   }
 
-  const discovered = probe.success.value;
+  const discovered = probeExit.value.value;
+  if (discovered.models.length === 0) {
+    return buildServerProvider({
+      driver: PROVIDER,
+      presentation: PI_PRESENTATION,
+      enabled: true,
+      checkedAt,
+      models: [],
+      skills,
+      probe: {
+        installed: true,
+        version: discovered.version,
+        status: "error",
+        auth: { status: "unknown" },
+        message:
+          "Pi ACP returned no usable models. Run `pi` in a terminal and configure an authenticated model provider.",
+      },
+    });
+  }
   return buildServerProvider({
     driver: PROVIDER,
     presentation: PI_PRESENTATION,
@@ -275,11 +307,8 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     probe: {
       installed: true,
       version: discovered.version,
-      status: discovered.models.length > 0 ? "ready" : "warning",
+      status: "ready",
       auth: { status: "authenticated", type: "pi" },
-      ...(discovered.models.length === 0
-        ? { message: "Pi ACP probe returned no available models." }
-        : {}),
     },
   });
 });

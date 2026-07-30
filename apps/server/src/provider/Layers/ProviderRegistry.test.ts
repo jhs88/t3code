@@ -1443,6 +1443,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                   cursor: { enabled: false },
                   grok: { enabled: false },
                   opencode: { enabled: false },
+                  pi: { enabled: false },
                 },
                 // `providerInstances` keys are branded `ProviderInstanceId`;
                 // the branded index signature rejects plain string literals
@@ -1555,6 +1556,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                   cursor: { enabled: false },
                   grok: { enabled: false },
                   opencode: { enabled: false },
+                  pi: { enabled: false },
                 },
               }),
             ),
@@ -1658,6 +1660,81 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         }),
       );
 
+      it.effect("eagerly probes synthesized Pi once and caches a failed result", () =>
+        Effect.gen(function* () {
+          const missingPiAcp = "t3code_pi_acp_guaranteed_missing";
+          const spawnedCommands: Array<string> = [];
+          const settingsValue = decodeServerSettings(
+            deepMerge(encodedDefaultServerSettings, {
+              providers: {
+                codex: { enabled: false },
+                claudeAgent: { enabled: false },
+                cursor: { enabled: false },
+                grok: { enabled: false },
+                opencode: { enabled: false },
+                pi: { enabled: true, binaryPath: missingPiAcp },
+              },
+            }),
+          );
+          const serverSettings = yield* makeMutableServerSettingsService(settingsValue);
+          const scope = yield* Scope.make();
+          yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+          const providerRegistryLayer = ProviderRegistryLive.pipe(
+            Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+            Layer.provideMerge(
+              Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
+            ),
+            Layer.provideMerge(
+              ServerConfig.layerTest(process.cwd(), {
+                prefix: "t3-provider-registry-pi-",
+              }),
+            ),
+            Layer.provideMerge(TestHttpClientLive),
+            Layer.provideMerge(
+              Layer.succeed(
+                ProviderEventLoggers.ProviderEventLoggers,
+                ProviderEventLoggers.NoOpProviderEventLoggers,
+              ),
+            ),
+            Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
+            Layer.updateService(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
+              ChildProcessSpawner.make((command) => {
+                spawnedCommands.push((command as { readonly command: string }).command);
+                return spawner.spawn(command);
+              }),
+            ),
+            Layer.provideMerge(NodeServices.layer),
+            Layer.provideMerge(BackgroundPolicyAlwaysRunLayer),
+          );
+          const runtimeServices = yield* Layer.build(providerRegistryLayer).pipe(
+            Scope.provide(scope),
+          );
+
+          yield* Effect.gen(function* () {
+            const registry = yield* ProviderRegistry.ProviderRegistry;
+            const initial = yield* registry.getProviders;
+            const pi = initial.find((provider) => provider.instanceId === "pi");
+            assert.strictEqual(pi?.driver, "pi");
+            assert.strictEqual(pi?.status, "error");
+            assert.strictEqual(pi?.installed, false);
+            assert.deepStrictEqual(spawnedCommands, [missingPiAcp]);
+
+            yield* serverSettings.updateSettings({
+              providers: { pi: settingsValue.providers.pi },
+            });
+            yield* Effect.yieldNow;
+            yield* Effect.yieldNow;
+
+            const afterSave = yield* registry.getProviders;
+            assert.strictEqual(
+              afterSave.find((provider) => provider.instanceId === "pi")?.status,
+              "error",
+            );
+            assert.deepStrictEqual(spawnedCommands, [missingPiAcp]);
+          }).pipe(Effect.provide(runtimeServices));
+        }),
+      );
+
       it.effect("includes unavailable instance snapshots in getProviders", () =>
         Effect.gen(function* () {
           const serverSettings = yield* makeMutableServerSettingsService(
@@ -1738,6 +1815,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                     grok: {
                       enabled: false,
                     },
+                    pi: {
+                      enabled: false,
+                    },
                   },
                 }),
               ),
@@ -1808,6 +1888,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 "cursor",
                 "grok",
                 "opencode",
+                "pi",
               ]);
               assert.strictEqual(cursorProvider?.enabled, false);
               assert.strictEqual(cursorProvider?.status, "disabled");
