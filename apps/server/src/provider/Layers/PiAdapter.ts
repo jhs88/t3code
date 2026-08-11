@@ -1,4 +1,4 @@
-/** Pi provider adapter backed by one scoped pi-acp process per thread. */
+/** Shared ACP provider adapter, with Pi-specific behavior supplied as a profile. */
 import {
   ApprovalRequestId,
   EventId,
@@ -53,13 +53,14 @@ import { parsePermissionRequest } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import {
   applyPiAcpModelSelection,
-  makePiAcpRuntime,
+  makeGenericAcpRuntime,
   type PiAcpSettings,
 } from "../acp/PiAcpSupport.ts";
 import { PI_ADAPTER_CAPABILITIES, type PiAdapterShape } from "../Services/PiAdapter.ts";
+import type { ProviderAdapterCapabilities } from "../Services/ProviderAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 
-const PROVIDER = ProviderDriverKind.make("pi");
+const PI_PROVIDER = ProviderDriverKind.make("pi");
 const PI_RESUME_VERSION = 1 as const;
 const PI_UPDATE_NOTICE_START = "New version available:";
 const PI_UPDATE_NOTICE_PATTERN =
@@ -77,6 +78,16 @@ export interface PiAdapterLiveOptions {
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly instanceId?: ProviderInstanceId;
   readonly resolveSettings?: Effect.Effect<PiAcpSettings>;
+}
+
+export interface AcpAdapterProfile {
+  readonly provider: ProviderDriverKind;
+  readonly displayName: string;
+  readonly capabilities: ProviderAdapterCapabilities;
+  readonly makeAssistantTextFilter: () => {
+    readonly push: (text: string) => string;
+    readonly flush: () => string;
+  };
 }
 
 interface PendingUserInput {
@@ -238,9 +249,14 @@ function settlePendingApprovals(
   );
 }
 
-export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLiveOptions) {
+export function makeAcpAdapter(
+  piSettings: PiAcpSettings,
+  profile: AcpAdapterProfile,
+  options?: PiAdapterLiveOptions,
+) {
   return Effect.gen(function* () {
-    const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("pi");
+    const provider = profile.provider;
+    const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make(provider);
     const fileSystem = yield* FileSystem.FileSystem;
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const serverConfig = yield* Effect.service(ServerConfig);
@@ -264,9 +280,9 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
       Effect.mapError(
         (cause) =>
           new ProviderAdapterRequestError({
-            provider: PROVIDER,
+            provider: provider,
             method: "crypto/randomUUIDv4",
-            detail: "Failed to generate Pi runtime identifier.",
+            detail: `Failed to generate ${profile.displayName} runtime identifier.`,
             cause,
           }),
       ),
@@ -305,7 +321,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
         ? Effect.succeed(context)
         : Effect.fail(
             new ProviderAdapterSessionNotFoundError({
-              provider: PROVIDER,
+              provider: provider,
               threadId,
             }),
           );
@@ -323,7 +339,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
         yield* offerRuntimeEvent({
           type: "session.exited",
           ...(yield* makeEventStamp()),
-          provider: PROVIDER,
+          provider: provider,
           threadId: context.threadId,
           payload: { exitKind: "graceful" },
         });
@@ -333,24 +349,23 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
       withThreadLock(
         input.threadId,
         Effect.gen(function* () {
-          if (input.provider !== undefined && input.provider !== PROVIDER) {
+          if (input.provider !== undefined && input.provider !== provider) {
             return yield* new ProviderAdapterValidationError({
-              provider: PROVIDER,
+              provider: provider,
               operation: "startSession",
-              issue: `Expected provider '${PROVIDER}' but received '${input.provider}'.`,
+              issue: `Expected provider '${provider}' but received '${input.provider}'.`,
             });
           }
           if (input.runtimeMode !== "full-access") {
             return yield* new ProviderAdapterValidationError({
-              provider: PROVIDER,
+              provider: provider,
               operation: "startSession",
-              issue:
-                "Pi only supports runtimeMode 'full-access'; pi-acp cannot enforce standard tool approvals.",
+              issue: `${profile.displayName} only supports runtimeMode 'full-access': ${profile.capabilities.runtimeModeReason ?? "this ACP adapter cannot enforce standard tool approvals."}`,
             });
           }
           if (!input.cwd?.trim()) {
             return yield* new ProviderAdapterValidationError({
-              provider: PROVIDER,
+              provider: provider,
               operation: "startSession",
               issue: "cwd is required and must be non-empty.",
             });
@@ -358,9 +373,9 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
           const parsedResume = parsePiResume(input.resumeCursor);
           if (input.resumeCursor !== undefined && !parsedResume) {
             return yield* new ProviderAdapterValidationError({
-              provider: PROVIDER,
+              provider: provider,
               operation: "startSession",
-              issue: "Pi resume cursor is invalid and cannot be loaded safely.",
+              issue: `${profile.displayName} resume cursor is invalid and cannot be loaded safely.`,
             });
           }
 
@@ -379,7 +394,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
           const pendingUserInputs = new Map<ApprovalRequestId, PendingUserInput>();
           let context!: PiSessionContext;
           const settings = options?.resolveSettings ? yield* options.resolveSettings : piSettings;
-          const acp = yield* makePiAcpRuntime({
+          const acp = yield* makeGenericAcpRuntime({
             piSettings: settings,
             childProcessSpawner,
             cwd,
@@ -388,7 +403,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
             clientInfo: { name: "t3-code", version: "0.0.0" },
             ...makeAcpNativeLoggers({
               nativeEventLogger,
-              provider: PROVIDER,
+              provider: provider,
               threadId: input.threadId,
             }),
           }).pipe(
@@ -397,7 +412,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
             Effect.mapError(
               (cause) =>
                 new ProviderAdapterProcessError({
-                  provider: PROVIDER,
+                  provider: provider,
                   threadId: input.threadId,
                   detail: cause.message,
                   cause,
@@ -426,7 +441,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
                   yield* offerRuntimeEvent({
                     type: "user-input.requested",
                     ...(yield* makeEventStamp()),
-                    provider: PROVIDER,
+                    provider: provider,
                     threadId: input.threadId,
                     turnId: context?.activeTurnId,
                     requestId: RuntimeRequestId.make(requestId),
@@ -459,7 +474,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
                   yield* offerRuntimeEvent({
                     type: "user-input.resolved",
                     ...(yield* makeEventStamp()),
-                    provider: PROVIDER,
+                    provider: provider,
                     threadId: input.threadId,
                     turnId: context?.activeTurnId,
                     requestId: RuntimeRequestId.make(requestId),
@@ -484,7 +499,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
                   yield* offerRuntimeEvent(
                     makeAcpRequestOpenedEvent({
                       stamp: yield* makeEventStamp(),
-                      provider: PROVIDER,
+                      provider: provider,
                       threadId: input.threadId,
                       turnId: context?.activeTurnId,
                       requestId: runtimeRequestId,
@@ -504,7 +519,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
                   yield* offerRuntimeEvent(
                     makeAcpRequestResolvedEvent({
                       stamp: yield* makeEventStamp(),
-                      provider: PROVIDER,
+                      provider: provider,
                       threadId: input.threadId,
                       turnId: context?.activeTurnId,
                       requestId: runtimeRequestId,
@@ -535,7 +550,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
             return yield* acp.start();
           }).pipe(
             Effect.mapError((error) =>
-              mapAcpToAdapterError(PROVIDER, input.threadId, "session/start", error),
+              mapAcpToAdapterError(provider, input.threadId, "session/start", error),
             ),
           );
 
@@ -545,13 +560,13 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
               model: modelSelection.model,
               selections: modelSelection.options,
               mapError: ({ cause }) =>
-                mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_config_option", cause),
+                mapAcpToAdapterError(provider, input.threadId, "session/set_config_option", cause),
             });
           }
 
           const now = yield* nowIso;
           const session: ProviderSession = {
-            provider: PROVIDER,
+            provider: provider,
             providerInstanceId: boundInstanceId,
             status: "ready",
             runtimeMode: "full-access",
@@ -580,7 +595,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
             stopped: false,
           };
 
-          const textFilter = makePiAssistantTextFilter();
+          const textFilter = profile.makeAssistantTextFilter();
           const emitContent = (
             text: string,
             itemId?: string,
@@ -593,7 +608,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
                     offerRuntimeEvent(
                       makeAcpContentDeltaEvent({
                         stamp,
-                        provider: PROVIDER,
+                        provider: provider,
                         threadId: context.threadId,
                         turnId: context.activeTurnId,
                         ...(itemId ? { itemId } : {}),
@@ -614,7 +629,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
                     yield* offerRuntimeEvent(
                       makeAcpAssistantItemEvent({
                         stamp: yield* makeEventStamp(),
-                        provider: PROVIDER,
+                        provider: provider,
                         threadId: context.threadId,
                         turnId: context.activeTurnId,
                         itemId: event.itemId,
@@ -627,7 +642,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
                     yield* offerRuntimeEvent(
                       makeAcpAssistantItemEvent({
                         stamp: yield* makeEventStamp(),
-                        provider: PROVIDER,
+                        provider: provider,
                         threadId: context.threadId,
                         turnId: context.activeTurnId,
                         itemId: event.itemId,
@@ -642,7 +657,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
                     yield* offerRuntimeEvent(
                       makeAcpPlanUpdatedEvent({
                         stamp: yield* makeEventStamp(),
-                        provider: PROVIDER,
+                        provider: provider,
                         threadId: context.threadId,
                         turnId: context.activeTurnId,
                         payload: event.payload,
@@ -657,7 +672,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
                     yield* offerRuntimeEvent(
                       makeAcpToolCallEvent({
                         stamp: yield* makeEventStamp(),
-                        provider: PROVIDER,
+                        provider: provider,
                         threadId: context.threadId,
                         turnId: context.activeTurnId,
                         toolCall: event.toolCall,
@@ -685,7 +700,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
               ]),
             ),
             Effect.catch((cause) =>
-              Effect.logError("Failed to process Pi runtime notification.", {
+              Effect.logError(`Failed to process ${profile.displayName} runtime notification.`, {
                 cause,
               }),
             ),
@@ -698,24 +713,24 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
           yield* offerRuntimeEvent({
             type: "session.started",
             ...(yield* makeEventStamp()),
-            provider: PROVIDER,
+            provider: provider,
             threadId: input.threadId,
             payload: { resume: started.initializeResult },
           });
           yield* offerRuntimeEvent({
             type: "session.state.changed",
             ...(yield* makeEventStamp()),
-            provider: PROVIDER,
+            provider: provider,
             threadId: input.threadId,
             payload: {
               state: "ready",
-              reason: "Pi ACP session ready (full access)",
+              reason: `${profile.displayName} ACP session ready (full access)`,
             },
           });
           yield* offerRuntimeEvent({
             type: "thread.started",
             ...(yield* makeEventStamp()),
-            provider: PROVIDER,
+            provider: provider,
             threadId: input.threadId,
             payload: { providerThreadId: started.sessionId },
           });
@@ -729,16 +744,16 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
         const context = yield* requireSession(input.threadId);
         if (input.interactionMode === "plan") {
           return yield* new ProviderAdapterValidationError({
-            provider: PROVIDER,
+            provider: provider,
             operation: "sendTurn",
-            issue: "Pi does not support plan interaction mode; thought_level is a model option.",
+            issue: `${profile.displayName} does not support plan interaction mode.`,
           });
         }
         if (context.turnInFlight) {
           return yield* new ProviderAdapterValidationError({
-            provider: PROVIDER,
+            provider: provider,
             operation: "sendTurn",
-            issue: "Pi already has an active turn for this thread.",
+            issue: `${profile.displayName} already has an active turn for this thread.`,
           });
         }
         context.turnInFlight = true;
@@ -751,7 +766,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
             model: modelSelection.model,
             selections: modelSelection.options,
             mapError: ({ cause }) =>
-              mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_config_option", cause),
+              mapAcpToAdapterError(provider, input.threadId, "session/set_config_option", cause),
           });
         }
 
@@ -764,7 +779,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
           });
           if (!attachmentPath) {
             return yield* new ProviderAdapterRequestError({
-              provider: PROVIDER,
+              provider: provider,
               method: "session/prompt",
               detail: `Invalid attachment id '${attachment.id}'.`,
             });
@@ -773,7 +788,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
             Effect.mapError(
               (cause) =>
                 new ProviderAdapterRequestError({
-                  provider: PROVIDER,
+                  provider: provider,
                   method: "session/prompt",
                   detail: cause.message,
                   cause,
@@ -788,7 +803,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
         }
         if (prompt.length === 0) {
           return yield* new ProviderAdapterValidationError({
-            provider: PROVIDER,
+            provider: provider,
             operation: "sendTurn",
             issue: "Turn requires non-empty text or attachments.",
           });
@@ -806,15 +821,15 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
         yield* offerRuntimeEvent({
           type: "turn.started",
           ...(yield* makeEventStamp()),
-          provider: PROVIDER,
+          provider: provider,
           threadId: input.threadId,
           turnId,
-          payload: { model: context.session.model ?? "pi-default" },
+          payload: { model: context.session.model ?? `${provider}-default` },
         });
 
         const result = yield* context.acp.prompt({ prompt }).pipe(
           Effect.mapError((error) =>
-            mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
+            mapAcpToAdapterError(provider, input.threadId, "session/prompt", error),
           ),
           Effect.catch((error) =>
             Effect.gen(function* () {
@@ -822,7 +837,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
               yield* offerRuntimeEvent({
                 type: "turn.completed",
                 ...(yield* makeEventStamp()),
-                provider: PROVIDER,
+                provider: provider,
                 threadId: input.threadId,
                 turnId,
                 payload: {
@@ -843,7 +858,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
         yield* offerRuntimeEvent({
           type: "turn.completed",
           ...(yield* makeEventStamp()),
-          provider: PROVIDER,
+          provider: provider,
           threadId: input.threadId,
           turnId,
           payload: {
@@ -876,7 +891,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
         yield* Effect.ignore(
           context.acp.cancel.pipe(
             Effect.mapError((error) =>
-              mapAcpToAdapterError(PROVIDER, threadId, "session/cancel", error),
+              mapAcpToAdapterError(provider, threadId, "session/cancel", error),
             ),
           ),
         );
@@ -888,7 +903,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
         const pending = context.pendingApprovals.get(requestId);
         if (!pending) {
           return yield* new ProviderAdapterRequestError({
-            provider: PROVIDER,
+            provider: provider,
             method: "session/request_permission",
             detail: `Unknown pending approval request: ${requestId}`,
           });
@@ -905,9 +920,9 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
         const pending = context.pendingUserInputs.get(requestId);
         if (!pending) {
           return yield* new ProviderAdapterRequestError({
-            provider: PROVIDER,
+            provider: provider,
             method: "session/request_permission",
-            detail: `Unknown pending Pi selection request: ${requestId}`,
+            detail: `Unknown pending ${profile.displayName} selection request: ${requestId}`,
           });
         }
         yield* Deferred.succeed(pending.answers, answers);
@@ -919,10 +934,9 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
         Effect.andThen(
           Effect.fail(
             new ProviderAdapterRequestError({
-              provider: PROVIDER,
+              provider: provider,
               method: "rollbackThread",
-              detail:
-                "Pi ACP does not support conversation rollback; local history was not modified.",
+              detail: `${profile.displayName} ACP does not support conversation rollback; local history was not modified.`,
             }),
           ),
         ),
@@ -941,15 +955,17 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
 
     yield* Effect.addFinalizer(() =>
       stopAll().pipe(
-        Effect.catch((cause) => Effect.logError("Failed to stop Pi ACP sessions.", { cause })),
+        Effect.catch((cause) =>
+          Effect.logError(`Failed to stop ${profile.displayName} ACP sessions.`, { cause }),
+        ),
         Effect.tap(() => PubSub.shutdown(runtimeEventPubSub)),
         Effect.tap(() => managedNativeEventLogger?.close() ?? Effect.void),
       ),
     );
 
     return {
-      provider: PROVIDER,
-      capabilities: PI_ADAPTER_CAPABILITIES,
+      provider: provider,
+      capabilities: profile.capabilities,
       startSession,
       sendTurn,
       interruptTurn,
@@ -964,4 +980,26 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
       streamEvents: Stream.fromPubSub(runtimeEventPubSub),
     } satisfies PiAdapterShape;
   });
+}
+
+const PI_ADAPTER_PROFILE: AcpAdapterProfile = {
+  provider: PI_PROVIDER,
+  displayName: "Pi",
+  capabilities: PI_ADAPTER_CAPABILITIES,
+  makeAssistantTextFilter: makePiAssistantTextFilter,
+};
+
+export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLiveOptions) {
+  return makeAcpAdapter(
+    { ...piSettings, authMethodId: "terminal_setup" },
+    PI_ADAPTER_PROFILE,
+    options?.resolveSettings
+      ? {
+          ...options,
+          resolveSettings: options.resolveSettings.pipe(
+            Effect.map((settings) => ({ ...settings, authMethodId: "terminal_setup" })),
+          ),
+        }
+      : options,
+  );
 }

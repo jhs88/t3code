@@ -37,6 +37,16 @@ describe("ProviderSettingsForm helpers", () => {
     });
   });
 
+  it("exposes Hermes defaults through the generic ACP driver", () => {
+    const acp = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("acpRegistry")];
+    expect(acp?.label).toBe("Hermes / Custom ACP");
+    expect(deriveProviderSettingsFields(acp!).map((field) => field.key)).toEqual([
+      "binaryPath",
+      "launchArgs",
+      "authMethodId",
+    ]);
+  });
+
   it("preserves unknown config keys while omitting empty configurable fields", () => {
     const opencode = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("opencode")];
     expect(opencode).toBeDefined();

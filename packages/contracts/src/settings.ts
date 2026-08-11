@@ -448,6 +448,40 @@ export const PiSettings = makeProviderSettingsSchema(
 );
 export type PiSettings = typeof PiSettings.Type;
 
+export const AcpRegistrySettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("hermes").pipe(
+      Schema.annotateKey({
+        title: "ACP command",
+        description: "Command for an agent that speaks ACP over stdio.",
+        providerSettingsForm: { placeholder: "hermes", clearWhenEmpty: "omit" },
+      }),
+    ),
+    launchArgs: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("acp")),
+      Schema.annotateKey({
+        title: "Launch arguments",
+        description: "Arguments passed to the ACP command.",
+        providerSettingsForm: { placeholder: "acp", clearWhenEmpty: "persist" },
+      }),
+    ),
+    authMethodId: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Authentication method",
+        description: "Optional ACP auth method id. Blank selects the first advertised method.",
+        providerSettingsForm: { placeholder: "Automatic", clearWhenEmpty: "omit" },
+      }),
+    ),
+  },
+  { order: ["binaryPath", "launchArgs", "authMethodId"] },
+);
+export type AcpRegistrySettings = typeof AcpRegistrySettings.Type;
+
 export const OpenCodeSettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(

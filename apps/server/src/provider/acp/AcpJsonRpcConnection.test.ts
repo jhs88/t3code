@@ -521,6 +521,7 @@ describe("AcpSessionRuntime", () => {
           },
           cwd: process.cwd(),
           resumeSessionId: "stale-session-id",
+          resumeFailureMode: "fail",
           clientInfo: { name: "t3-test", version: "0.0.0" },
         }),
       ),

@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
+  AcpRegistrySettings,
   ClientSettingsSchema,
   ClientSettingsPatch,
   DEFAULT_SERVER_SETTINGS,
@@ -15,6 +16,7 @@ const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
+const decodeAcpRegistrySettings = Schema.decodeSync(AcpRegistrySettings);
 
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
@@ -335,6 +337,17 @@ describe("Pi settings", () => {
       enabled: false,
       binaryPath: "custom-pi-acp",
       piBinaryPath: "custom-pi",
+    });
+  });
+});
+
+describe("generic ACP settings", () => {
+  it("defaults to the Hermes ACP launch command", () => {
+    expect(decodeAcpRegistrySettings({})).toEqual({
+      enabled: true,
+      binaryPath: "hermes",
+      launchArgs: "acp",
+      authMethodId: "",
     });
   });
 });

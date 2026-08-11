@@ -15,6 +15,8 @@ import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 export interface PiAcpSettings {
   readonly binaryPath?: string;
   readonly piBinaryPath?: string;
+  readonly launchArgs?: string;
+  readonly authMethodId?: string;
 }
 
 const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-zA-Z]:[\\/]/;
@@ -66,17 +68,18 @@ function buildPiAcpEnvironment(
   settings: PiAcpSettings | null | undefined,
   environment?: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv | undefined {
-  if (!settings?.piBinaryPath && !settings?.binaryPath && !environment) return undefined;
+  const binaryDirectory = dirnameForExecutablePath(settings?.binaryPath);
+  const piBinaryDirectory = dirnameForExecutablePath(settings?.piBinaryPath);
+  if (!settings?.piBinaryPath && !binaryDirectory && !piBinaryDirectory && !environment) {
+    return undefined;
+  }
 
   const env = { ...environment };
   const pathKey = pathKeyForEnvironment(env);
   if (settings?.piBinaryPath) env.PI_ACP_PI_COMMAND = settings.piBinaryPath;
   const pathValue = prependUniquePathEntries(
     env[pathKey],
-    [
-      dirnameForExecutablePath(settings?.binaryPath),
-      dirnameForExecutablePath(settings?.piBinaryPath),
-    ],
+    [binaryDirectory, piBinaryDirectory],
     pathDelimiterForEnvironment(env),
   );
   if (pathValue) env[pathKey] = pathValue;
@@ -106,13 +109,51 @@ export function buildPiAcpSpawnInput(
   const env = buildPiAcpEnvironment(settings, environment);
   return {
     command: settings?.binaryPath || "pi-acp",
-    args: [],
+    args: parseAcpLaunchArgs(settings?.launchArgs ?? ""),
     cwd,
     ...(env ? { env } : {}),
   };
 }
 
-export const makePiAcpRuntime = (
+export function parseAcpLaunchArgs(input: string): ReadonlyArray<string> {
+  const args: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | null = null;
+  let escaping = false;
+  for (const character of input.trim()) {
+    if (escaping) {
+      current += character;
+      escaping = false;
+      continue;
+    }
+    if (character === "\\" && quote !== "'") {
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) quote = null;
+      else current += character;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (/\s/.test(character)) {
+      if (current) {
+        args.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += character;
+  }
+  if (escaping) current += "\\";
+  if (current) args.push(current);
+  return args;
+}
+
+export const makeGenericAcpRuntime = (
   input: PiAcpRuntimeInput,
 ): Effect.Effect<
   AcpSessionRuntime.AcpSessionRuntimeShape,
@@ -124,7 +165,7 @@ export const makePiAcpRuntime = (
       AcpSessionRuntime.layer({
         ...input,
         spawn: buildPiAcpSpawnInput(input.piSettings, input.cwd, input.environment),
-        authMethodId: "terminal_setup",
+        ...(input.piSettings?.authMethodId ? { authMethodId: input.piSettings.authMethodId } : {}),
         resumeFailureMode: "fail",
       }).pipe(
         Layer.provide(
@@ -135,6 +176,12 @@ export const makePiAcpRuntime = (
     return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
       Effect.provide(acpContext),
     );
+  });
+
+export const makePiAcpRuntime = (input: PiAcpRuntimeInput) =>
+  makeGenericAcpRuntime({
+    ...input,
+    piSettings: { ...input.piSettings, authMethodId: "terminal_setup" },
   });
 
 interface PiAcpModelSelectionRuntime {

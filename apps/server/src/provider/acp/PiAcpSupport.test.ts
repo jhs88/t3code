@@ -3,7 +3,11 @@ import * as Effect from "effect/Effect";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { describe, expect } from "vite-plus/test";
 
-import { applyPiAcpModelSelection, buildPiAcpSpawnInput } from "./PiAcpSupport.ts";
+import {
+  applyPiAcpModelSelection,
+  buildPiAcpSpawnInput,
+  parseAcpLaunchArgs,
+} from "./PiAcpSupport.ts";
 
 describe("buildPiAcpSpawnInput", () => {
   it("builds the default Pi ACP command", () => {
@@ -53,6 +57,24 @@ describe("buildPiAcpSpawnInput", () => {
       Path: "C:\\Users\\me\\bin;C:\\Windows\\System32;C:\\Program Files\\nodejs",
       PI_ACP_PI_COMMAND: "C:\\Users\\me\\bin\\pi.cmd",
     });
+  });
+
+  it("builds a generic ACP launch command with quoted arguments", () => {
+    expect(
+      buildPiAcpSpawnInput(
+        { binaryPath: "hermes", launchArgs: `acp --profile "T3 Work"` },
+        "/tmp/project",
+      ),
+    ).toEqual({
+      command: "hermes",
+      args: ["acp", "--profile", "T3 Work"],
+      cwd: "/tmp/project",
+    });
+    expect(parseAcpLaunchArgs(`--flag 'two words' escaped\\ value`)).toEqual([
+      "--flag",
+      "two words",
+      "escaped value",
+    ]);
   });
 });
 
