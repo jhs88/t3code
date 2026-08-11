@@ -69,7 +69,7 @@ const ANSI_CONTROL_SEQUENCE_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 // eslint-disable-next-line no-control-regex
 const INCOMPLETE_ANSI_CONTROL_SEQUENCE_PATTERN = /(?:\x1b|\x1b\[[0-?]*[ -/]*)$/;
 const PI_SELECT_QUESTION_ID = "selection";
-const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.UnknownFromJsonString);
+const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
 export interface PiAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
