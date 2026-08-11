@@ -38,6 +38,7 @@ const runtimeMock = {
     inventory: {
       providerList: { connected: [] as string[], all: [] as unknown[], default: {} },
       agents: [] as unknown[],
+      skills: [] as unknown[],
     } as unknown,
   },
   reset() {
@@ -48,6 +49,7 @@ const runtimeMock = {
     this.state.inventory = {
       providerList: { connected: [], all: [] as unknown[], default: {} },
       agents: [] as unknown[],
+      skills: [] as unknown[],
     };
   },
 };
@@ -182,6 +184,7 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
           { name: "build", hidden: false, mode: "primary" },
           { name: "plan", hidden: false, mode: "primary" },
         ],
+        skills: [],
       };
 
       const snapshot = yield* checkOpenCodeProviderStatus(makeOpenCodeSettings(), process.cwd());
@@ -203,6 +206,60 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
       NodeAssert.equal(
         agentDescriptor.options.find((option) => option.isDefault === true)?.id,
         "build",
+      );
+    }),
+  );
+
+  it.effect("includes OpenCode skills in the provider snapshot", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.inventory = {
+        providerList: { connected: [], all: [], default: {} },
+        agents: [],
+        skills: [
+          {
+            name: "review",
+            description: "Review workflow changes.",
+            location: "/Users/test/.agents/skills/review/SKILL.md",
+            content: "---\nname: review\n---\n",
+          },
+          {
+            name: "triage",
+            description: "Triage routing issues.",
+            location: "/Users/test/.agents/skills/triage/SKILL.md",
+            content: "---\nname: triage\n---\n",
+          },
+          {
+            name: "missing-location",
+            description: "This incomplete SDK row should be skipped.",
+            location: "",
+            content: "---\nname: missing-location\n---\n",
+          },
+        ],
+      };
+
+      const snapshot = yield* checkOpenCodeProviderStatus(makeOpenCodeSettings(), process.cwd());
+
+      NodeAssert.deepEqual(
+        snapshot.skills.map((skill) => ({
+          name: skill.name,
+          path: skill.path,
+          enabled: skill.enabled,
+          shortDescription: skill.shortDescription,
+        })),
+        [
+          {
+            name: "review",
+            path: "/Users/test/.agents/skills/review/SKILL.md",
+            enabled: true,
+            shortDescription: "Review workflow changes.",
+          },
+          {
+            name: "triage",
+            path: "/Users/test/.agents/skills/triage/SKILL.md",
+            enabled: true,
+            shortDescription: "Triage routing issues.",
+          },
+        ],
       );
     }),
   );
