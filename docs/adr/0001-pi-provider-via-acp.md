@@ -90,5 +90,5 @@ Release verification will include deterministic protocol/provider/UI coverage an
 
 ### Follow-up
 
-- Implement the provider in the tracer-bullet sequence documented in [`docs/providers/pi.md`](../providers/pi.md).
+- Implement the provider in the tracer-bullet sequence documented in [`docs/user/providers-pi.md`](../user/providers-pi.md).
 - Revisit rollback, ephemeral utility sessions, standard tool approvals, and extension input when `pi-acp` adds the necessary protocol surfaces.

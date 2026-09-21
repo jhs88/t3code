@@ -8,7 +8,6 @@ import {
   type ProviderUserInputAnswers,
   ProviderDriverKind,
   ProviderInstanceId,
-  type RuntimeContentStreamKind,
   RuntimeRequestId,
   type ThreadId,
   TurnId,
@@ -584,7 +583,7 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
           const emitContent = (
             text: string,
             itemId?: string,
-            streamKind: RuntimeContentStreamKind = "assistant_text",
+            streamKind: "assistant_text" | "reasoning_text" = "assistant_text",
           ) =>
             text.length === 0
               ? Effect.void
@@ -666,13 +665,10 @@ export function makePiAdapter(piSettings: PiAcpSettings, options?: PiAdapterLive
                     );
                     return;
                   case "ContentDelta":
-                    yield* emitContent(
-                      event.streamKind === "reasoning_text"
-                        ? event.text
-                        : textFilter.push(event.text),
-                      event.itemId,
-                      event.streamKind ?? "assistant_text",
-                    );
+                    yield* emitContent(textFilter.push(event.text), event.itemId);
+                    return;
+                  case "ThoughtDelta":
+                    yield* emitContent(event.text, undefined, "reasoning_text");
                     return;
                 }
               }),

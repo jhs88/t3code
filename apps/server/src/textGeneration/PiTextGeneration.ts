@@ -9,7 +9,9 @@ import {
   type AcpTextGenerationOperation,
   makeAcpStructuredOutputRunner,
 } from "./AcpStructuredOutput.ts";
-import { type ThreadTitleGenerationResult, type TextGenerationShape } from "./TextGeneration.ts";
+import type { ThreadTitleGenerationResult, TextGeneration } from "./TextGeneration.ts";
+
+type TextGenerationShape = TextGeneration["Service"];
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
@@ -77,6 +79,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
       stagedSummary: input.stagedSummary,
       stagedPatch: input.stagedPatch,
       includeBranch: input.includeBranch === true,
+      policy: input.policy,
     });
     const generated = yield* runPiJson({
       operation: "generateCommitMessage",
