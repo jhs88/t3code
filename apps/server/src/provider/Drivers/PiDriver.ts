@@ -99,7 +99,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
       const textGeneration = yield* makePiTextGeneration(effectiveConfig, processEnv);
 
       const snapshot = yield* makeManagedServerProvider<PiSettings>({
-        maintenanceCapabilities: MAINTENANCE,
+        resolveMaintenance: () => Effect.succeed(MAINTENANCE),
         getSettings: Effect.succeed(effectiveConfig),
         streamSettings: Stream.never,
         haveSettingsChanged: () => false,

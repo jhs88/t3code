@@ -85,7 +85,7 @@ function buildPiAcpEnvironment(
 
 export interface PiAcpRuntimeInput extends Omit<
   AcpSessionRuntime.AcpSessionRuntimeOptions,
-  "authMethodId" | "clientCapabilities" | "resumeFailureMode" | "spawn"
+  "authMethodId" | "clientCapabilities" | "spawn"
 > {
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly piSettings: PiAcpSettings | null | undefined;
@@ -125,7 +125,6 @@ export const makePiAcpRuntime = (
         ...input,
         spawn: buildPiAcpSpawnInput(input.piSettings, input.cwd, input.environment),
         authMethodId: "terminal_setup",
-        resumeFailureMode: "fail",
       }).pipe(
         Layer.provide(
           Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.childProcessSpawner),
